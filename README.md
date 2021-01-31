@@ -1,5 +1,5 @@
 # POTION
-### Code to replicate experimental results in the paper "Optimizing Graph Structure for Targeted Diffusion".
+### Code to replicate experimental results in the paper.
 1. Use `conda` to create a virtual environment named `POTION`:
 ```
 conda create -n POTION python=3.7
