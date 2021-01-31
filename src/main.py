@@ -1,12 +1,9 @@
+import os
 import time
-import math
-import torch
 import pickle
 import argparse
-import numpy as np
 from utils import *
 import pandas as pd
-import networkx as nx
 from model import Threat_Model
 from collections import defaultdict
 from networkx.algorithms.community import greedy_modularity_communities
@@ -15,20 +12,18 @@ np.random.seed(1)
 parser = argparse.ArgumentParser()
 parser.add_argument('--numExp', type=int, default=1,
                     help='numExp')
-parser.add_argument('--graph_type', type=str, default='BA',
+parser.add_argument('--graph_type', type=str, default='Amazon',
                     help='graph type')
 parser.add_argument('--mode', type=str, default='equalAlpha',
                     help='trade-off parameters mode')
 parser.add_argument('--save_result', type=int, default=1,
                     help='whether or not to save the result to the disk')
-parser.add_argument('--weighted', type=int, default=1,
+parser.add_argument('--weighted', type=int, default=0,
                     help='whether the graph is weighted')
-
 args = parser.parse_args()
 
 
 # parameters for running experiments
-n = 375
 learning_rate = 1
 MAPPING = {
         'equalAlpha': [1/3, 1/3, 1/3],
@@ -39,70 +34,10 @@ MAPPING = {
         'alpha1=0': [0, 1/3, 1/3]
         }
 
-## select target subgraph
-def select_target_subgraph(graph, graph_type, mapping=None):
-    if graph_type == 'Email':
-        with open('../data/email-Eu-core-department-labels-cc.txt', 'r') as fid:
-            email_data = fid.readlines()
-        comm_to_nodes = {}
-        for item in email_data:
-            nodeID, commID = [int(i) for i in item.rstrip().split()]
-            if commID not in comm_to_nodes:
-                comm_to_nodes[commID] = [mapping[nodeID]]
-            else:
-                comm_to_nodes[commID].append(mapping[nodeID])
-        comm_size = sorted([(key, len(comm_to_nodes[key])) for key in comm_to_nodes.keys()], key=lambda x: x[1])
-        ## select the community whose size is 50-quantile among all sizes
-        selected_comm = comm_size[math.floor(len(comm_size) * 0.5)][0]
-        comm = comm_to_nodes[selected_comm]
-    elif graph_type == 'Airport':
-        deg = list(dict(graph.degree()).items())
-        deg = sorted(deg, key=lambda x: x[1])
-        ## select the node whose degree is 90-quantile among all nodes' degrees
-        selected_node = deg[math.floor(len(deg) * 0.9)][0] 
-        comm = list(graph.neighbors(selected_node)) + [selected_node] 
-    elif graph_type == 'Brain':
-        comm = list(range(len(graph)-100, len(graph)))
-    else:
-        all_comms = list(greedy_modularity_communities(graph))
-        all_comms = sorted(all_comms, key=lambda x: len(x))
-        ## select the community whose size is 50-quantile among all sizes
-        comm = list(all_comms[math.floor(len(all_comms) * 0.5)])
-        assert(len(comm) != 0)
-    return comm
 
 
-## generate synthetic graphs
-def gen_graph(graph_type, graph_id=1):
-    """
-    graph_id: used to index BTER networks
-    """
-    if graph_type == 'BA':
-        G = nx.barabasi_albert_graph(n, 5)
-    elif graph_type == 'Small-World':
-        G = nx.watts_strogatz_graph(n, 10, 0.2)
-    elif graph_type == 'Email':
-        G = nx.read_edgelist('../data/email-Eu-core-cc.txt', nodetype=int)
-        G.remove_edges_from(nx.selfloop_edges(G))
-    elif graph_type == 'Brain':
-        G = nx.from_numpy_array(np.loadtxt('../data/Brain.txt'))
-    elif graph_type == 'BTER':
-        G = nx.read_edgelist('../data/BTER_{:02d}.txt'.format(graph_id), nodetype=int)
-    elif graph_type == 'Airport':
-        G = nx.read_edgelist('../data/US-airport.txt', nodetype=int, create_using=nx.DiGraph, data=(('weight', float),) )
-        ## ensure the Airport network is symmetric and normalize the weights
-        Adj = nx.adjacency_matrix(G)
-        Adj += Adj.T
-        Adj /= Adj.max()
-        G = nx.from_numpy_matrix(Adj.todense())
-        ## pick the largest connected component
-        comps = nx.connected_components(G)
-        comp_max_idx = max(comps, key=lambda x: len(x))
-        G = G.subgraph(comp_max_idx)
-    return G
 
-
-## Algorithm 1
+## Algorithm 1 in the paper
 def SGD_attack(Attacker, Optimizer):
     t1 = time.time()
     Attacker_budget = Attacker.get_budget()
@@ -149,8 +84,6 @@ def SGD_attack(Attacker, Optimizer):
             addedEdges)
 
 
-
-
 ## launch attack algorithm
 def launch_attach():
     alpha_1, alpha_2, alpha_3 = MAPPING[args.mode]
@@ -170,14 +103,12 @@ def launch_attach():
     adjNormDiff         = Attacker.diff_adjNorm()
     addedEdgesRatio     = addedEdges / len(G.edges())
 
-    utility = Attacker.get_utility()
-
     ## record all the statistics we are interested in
     ret = (utility_ret, lambda1_S_ret, impact_S_ret, centrality_ret, budget_change_ratio, \
         Alpha, avgDegDiff, avgDegDiff_S, avgDegDiff_S_prime, adjNormDiff, addedEdgesRatio, Attacker)
     print("Budget: {:.2f}%  \
            lambda1_S: {:.4f}%  \
-           negative impact: {:.4f}% \
+           impact on S: {:.4f}% \
            centrality: {:.4f}%  \
            addedEdgesRatio: {:.4f}% \
            utility: {:.4f}\n".format(
@@ -205,6 +136,7 @@ def rounding(Attacker):
         DeletedEdge = (w_a < w_o and w_o >  0)
         if AddedEdge or DeletedEdge:
             modifiedEdges.append((rowIdx, colIdx, Diff, DeletedEdge))
+    ## sorting the modifications in descending order of their magnitudes
     modifiedEdges = sorted(modifiedEdges, key=lambda x: x[2], reverse=True)
 
     B = A.copy()
@@ -218,7 +150,9 @@ def rounding(Attacker):
     spec_norm = estimate_sym_specNorm(B-A)
     while (spec_norm <= Attacker.budget):
         Edge = modifiedEdges[cnt]
+        ## check if "Edge" corresponds to a deletion
         DeletedEdge = Edge[-1]
+        ## "Edge" is either a deletion or an addition
         if not DeletedEdge:
             B[Edge[0], Edge[1]] = 1
             B[Edge[1], Edge[0]] = 1
@@ -259,7 +193,7 @@ if __name__ == '__main__':
         G = nx.relabel_nodes(G, mapping)
         adj = nx.adjacency_matrix(G).todense()
 
-        if args.graph_type == "Email":
+        if args.graph_type in ['Email', 'Amazon']:
             S = select_target_subgraph(G, args.graph_type, mapping)
         else:
             S = select_target_subgraph(G, args.graph_type)
@@ -287,7 +221,7 @@ if __name__ == '__main__':
     if args.save_result:
         Key = args.mode
         W = 'weighted' if args.weighted else 'unweighted'
-        if os.path.exists('../result/{}'.format(W)):
+        if not os.path.exists('../result/{}'.format(W)):
             os.mkdir('../result/{}'.format(W))
 
         ## save original and attacked graphs

@@ -13,7 +13,7 @@ class Threat_Model(nn.Module):
         self.maxDeg = np.max(list(dict(G.degree).values()))
         self.weighted_graph = weighted
 
-        ## S: targeted subgraph
+        ## S:       targeted subgraph
         ## S_prime: non-targeted subgraph
         self.S = S
         self.S_prime = S_prime
@@ -30,7 +30,7 @@ class Threat_Model(nn.Module):
         self.centrality = 0
         self.lambda1 = 0
         self.Loss = 0
-        
+
         adj = nx.adjacency_matrix(G).todense()
         self.original_adj = torch.tensor(adj, dtype=torch.float32)
         
@@ -125,7 +125,7 @@ class Threat_Model(nn.Module):
         cut_size = x_s @ L @ x_s
         self.centrality = cut_size * normalization_const
 
-        ## negative impact
+        ## impact on S (corresponding to sigma in Eq.(3.6))
         self.impact_S = v_est[self.S].sum()
 
         # utility function 
