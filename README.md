@@ -17,7 +17,13 @@ conda install pytorch torchvision -c pytorch
 pip install EoN
 ```
 
-4. Check out the ipython notebook `src/exp.ipynb` for an example to running the code.
+4. Create a folder at the root directory to save results:
+```
+mkdir result/
+```
+
+
+5. Check out the ipython notebook `src/exp.ipynb` for an example to running the code.
 
 
 ### Reference
