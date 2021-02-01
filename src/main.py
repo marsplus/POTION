@@ -24,6 +24,8 @@ args = parser.parse_args()
 
 
 # parameters for running experiments
+## Notice: if the learning rate is changed to values other than 1, 
+##         you are supposed to change the way that the attacker's budget is computed. 
 learning_rate = 1
 MAPPING = {
         'equalAlpha': [1/3, 1/3, 1/3],
