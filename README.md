@@ -23,7 +23,7 @@ mkdir result/
 ```
 
 
-5. Check out the ipython notebook `src/exp.ipynb` for an example to running the code.
+5. Check out the ipython notebook `src/exp.ipynb` for an example of running the code. In order to run POTION on networks not listed in the paper, please check out the example at the end of the notebook.
 
 
 ### Reference
